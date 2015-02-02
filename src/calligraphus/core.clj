@@ -66,20 +66,69 @@
     (async/go
       (async/>! c (assoc group :events @new-events)))))
 
+(defn get-photos2 [in-chan out-chan]
+  (let [new-events (atom [])
+        group (async/<! in-chan)
+        events (:events group)
+        events-chan (async/chan 1)
+        results-chan (async/chan 1)]
+    (async/go-loop []
+      (let [event (async/<! events-chan)
+            url (format photo-uri-template (:photo_album_id event) api-key)
+            _ (async-get url results-chan)]
+        (swap! new-events conj (clean-events (async/<! results-chan))))
+      (recur))
+    (async/go (async/>! out-chan (assoc group :events @new-events))
+              (async/onto-chan events-chan events))))
+
+(defn get-group2 [in-chan out-chan]
+  (async/go-loop []
+    (let [url (async/<! in-chan)]
+      (async-get (format group-uri-template url api-key) out-chan))
+    (recur)))
+
+(defn get-event2 [in-chan out-chan]
+  (async/go-loop []
+    (let [group (clean-group (async/<! in-chan))
+          id (:id group)
+          e-chan (async/chan 1)
+          _ (async-get (format event-uri-template id api-key) e-chan)
+          events (clean-events (async/<! e-chan))]
+      (async/>! out-chan (assoc group :events events)))
+    (recur)))
+
+(defn main-loop [coll]
+  (let [main-chan (async/chan 1)
+        group-chan (async/chan 1)
+        event-chan (async/chan 1)
+        photo-chan (async/chan 1)
+        result-chan (async/chan 1)
+        _ (get-group2 main-chan event-chan)
+        _ (get-event2 event-chan result-chan)
+        ;_ (get-photos2 photo-chan result-chan)
+        ]
+    (async/go-loop []
+      (let [g (async/<! result-chan)]
+        (swap! chapter-results conj g))
+      (recur))
+    (async/onto-chan main-chan coll)))
+
+(main-loop chapter-urls)
+
 ;; Send a chapter-url through a set of core.async channels to build up a big
 ;; vector of maps for each chapter
-(doseq [group (take 5 chapter-urls)]
-  (let [group-chan (async/chan)
-        event-chan (async/chan)
-        photo-chan (async/chan)
-        g (get-group group group-chan)
-        group-result (clean-group (async/<!! group-chan))
-        e (get-event group-result event-chan)
-        event-result (clean-events (async/<!! event-chan))
-        ge (assoc group-result :events event-result)
-        p (get-photos ge photo-chan)
-        photo-result (async/<!! photo-chan)]
-    (swap! chapter-results conj photo-result)))
+;; (doseq [group (take 5 chapter-urls)]
+;;   (let [group-chan (async/chan)
+;;         event-chan (async/chan)
+;;         photo-chan (async/chan)
+;;         g (get-group group group-chan)
+;;         group-result (clean-group (async/<!! group-chan))
+;;         e (get-event group-result event-chan)
+;;         event-result (clean-events (async/<!! event-chan))
+;;         ge (assoc group-result :events event-result)
+;;         p (get-photos ge photo-chan)
+;;         photo-result (async/<!! photo-chan)]
+;;     (swap! chapter-results conj photo-result)))
 
 ;; ; Seq through the chapter urls and get their representations from API
 ;; (def group-data
