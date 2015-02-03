@@ -9,7 +9,7 @@
             [cheshire.core :refer :all]))
 
 ; Meetup.com API key
-(def api-key "512d751a3e41262c3e387533222581f")
+(def api-key "4113124f79194d5f676f152d51377b54")
 
 (def chapter-results (atom []))
 
@@ -38,7 +38,7 @@
 ; Get a url and drop the result into a channel
 (defn async-get [url c]
   (http/get url #(async/go
-                   (async/<! (async/timeout 1000)) ; throttle the reqs
+                   (async/<! (async/timeout 2000)) ; throttle the reqs
                    (async/>! c %))))
 
 (defn get-group [group c]
@@ -66,21 +66,6 @@
     (async/go
       (async/>! c (assoc group :events @new-events)))))
 
-(defn get-photos2 [in-chan out-chan]
-  (let [new-events (atom [])
-        group (async/<! in-chan)
-        events (:events group)
-        events-chan (async/chan 1)
-        results-chan (async/chan 1)]
-    (async/go-loop []
-      (let [event (async/<! events-chan)
-            url (format photo-uri-template (:photo_album_id event) api-key)
-            _ (async-get url results-chan)]
-        (swap! new-events conj (clean-events (async/<! results-chan))))
-      (recur))
-    (async/go (async/>! out-chan (assoc group :events @new-events))
-              (async/onto-chan events-chan events))))
-
 (defn get-group2 [in-chan out-chan]
   (async/go-loop []
     (let [url (async/<! in-chan)]
@@ -102,18 +87,20 @@
         group-chan (async/chan 1)
         event-chan (async/chan 1)
         photo-chan (async/chan 1)
-        result-chan (async/chan 1)
-        _ (get-group2 main-chan event-chan)
-        _ (get-event2 event-chan result-chan)
-        ;_ (get-photos2 photo-chan result-chan)
-        ]
+        result-chan (async/chan 1)]
+    (get-group2 main-chan event-chan)
+    (get-event2 event-chan photo-chan)
+    ;(get-photos4 photo-chan result-chan)
     (async/go-loop []
-      (let [g (async/<! result-chan)]
+      (let [g (async/<! photo-chan)]
+        ;(get-photos g result-chan)
         (swap! chapter-results conj g))
       (recur))
     (async/onto-chan main-chan coll)))
 
-(main-loop chapter-urls)
+
+
+;;(main-loop (take 3 chapter-urls))
 
 ;; Send a chapter-url through a set of core.async channels to build up a big
 ;; vector of maps for each chapter
