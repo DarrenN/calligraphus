@@ -139,28 +139,28 @@
 
 (def delay-req (atom 1))
 
-(defn url-machine
-  []
-  (let [in (chan)
-        out (chan)]
-    (go-loop [u (<! in)]
-      (when u
-        (async-get u u out))
-      (recur (<! in)))
-    [in out]))
+;; (defn url-machine
+;;   []
+;;   (let [in (chan)
+;;         out (chan)]
+;;     (go-loop [u (<! in)]
+;;       (when u
+;;         (async-get u u out))
+;;       (recur (<! in)))
+;;     [in out]))
 
-(defn url-fetch2
-  [urls]
-  (loop [u urls]
-    (when (> (count u) 0)
-      (let [[in out] (url-machine)]
-        (>!! in (first u))
-        (let [[url resp] (<!! out)]
-          (println url (:status resp) "delay" @delay-req)
-          (swap! delay-req inc)
-          (if (= (:status resp) 200)
-            (recur (rest u))
-            (println "Oops!" (:status resp))))))))
+;; (defn url-fetch2
+;;   [urls]
+;;   (loop [u urls]
+;;     (when (> (count u) 0)
+;;       (let [[in out] (url-machine)]
+;;         (>!! in (first u))
+;;         (let [[url resp] (<!! out)]
+;;           (println url (:status resp) "delay" @delay-req)
+;;           (swap! delay-req inc)
+;;           (if (= (:status resp) 200)
+;;             (recur (rest u))
+;;             (println "Oops!" (:status resp))))))))
 
 
 

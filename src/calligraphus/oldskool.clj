@@ -4,12 +4,13 @@
             [clojure.tools.logging :as log]
             [org.httpkit.client :as http]
             [cheshire.core :refer :all]
+            [throttler.core :refer [throttle-chan chan-throttler]]
             [clojure.core.async :as a :refer [>! <! >!! <!! go go-loop chan buffer
                                               close! thread alts! alts!!
                                               timeout]]))
 
 (def api-key "4113124f79194d5f676f152d51377b54")
-(def delay-req (atom 1))
+(def delay-req (atom 0))
 (def results (atom []))
 (def group-uri-template "http://api.meetup.com/2/groups?radius=25.0&order=id&group_urlname=%s&desc=false&offset=0&photo-host=public&format=json&page=50&key=%s")
 (def event-uri-template "https://api.meetup.com/2/events?&sign=true&photo-host=public&status=upcoming,past&group_id=%s&fields=photo_album_id&page=50&key=%s")
@@ -199,6 +200,71 @@
 (def res2-out (make-pipe fetch-events res1-out))
 (def res3-out (make-pipe fetch-photos2 res2-out))
 (print-results res3-out)
+
+(def in-chan (chan))
+;;(def slow-chan (throttle-chan in-chan 1 :second 9))
+
+(def chapter-urls ["papers-we-love" "papers-we-love-too" "Papers-We-Love-Boulder" "papers-we-love-london" "Papers-We-Love-in-saint-louis" "Papers-We-Love-Columbus" "Papers-We-Love-Berlin" "Doo-Things" "Papers-We-Love-Boston" "Papers-we-love-Bangalore/" "Papers-We-Love-DC" "Papers-We-Love-Montreal" "Papers-We-Love-Seattle" "Papers-We-Love-Toronto" "Papers-We-Love-Hamburg" "Papers-We-Love-Dallas" "Papers-We-Love-Chicago" "Papers-We-Love-Reykjavik" "Papers-We-Love-Vienna" "Papers-We-Love-Munich"])
+
+(def make-slow-chan (chan-throttler 1 :second))
+
+(def c1 (chan))
+(def c2 (chan))
+(def c3 (chan))
+(def slow-1 (make-slow-chan c1))
+(def slow-2 (make-slow-chan c2))
+(def slow-3 (make-slow-chan c3))
+
+(def bigmap (atom {}))
+
+(def groups (atom []))
+(def group-events (atom []))
+(def event-photos (atom []))
+
+(go
+  (doseq [u chapter-urls]
+    (async-get (make-group-uri u) c1)))
+
+(go-loop [v (<! slow-1)]
+  (when v
+    (let [[url resp] v
+          status (:status resp)
+          group (first (get-in resp [:body :results]))
+          id (:id group)]
+      (log/info "Group Status" status url)
+      (when (= status 200)
+        (swap! bigmap assoc (keyword (str id)) group)
+        (async-get (make-event-uri id) c2)))
+    (recur (<! slow-1))))
+
+(go-loop [v (<! slow-2)]
+  (when v
+    (let [[url resp] v
+          status (:status resp)
+          events (get-in resp [:body :results])]
+      (log/info "Event Status" status url)
+      (when events
+        (let [group-id (get-in (first events) [:group :id])]
+          (swap! bigmap update-in (keyword (str group-id)) assoc :events events)
+          (doseq [event events]
+            (when (:photo_album_id event)
+              (async-get (make-photo-uri (:photo_album_id event)) c3))))))
+    (recur (<! slow-2))))
+
+(go-loop [v (<! slow-3)]
+  (when v
+    (let [[url resp] v
+          status (:status resp)
+          photos (get-in resp [:body :results])]
+      (log/info "Photo Status" status url)
+      (when photos
+        (let [group-id (get-in (first photos) [:photo_album :group_id])
+              event-id (get-in (first photos) [:photo_album :event_id])
+              group (get (keyword group-id) @bigmap)])
+        (swap! event-photos conj photos)))
+    (recur (<! slow-3))))
+
+;;(time (while (not (nil? (<!! slow-chan)))))
 
 ;; (>!! main-chan (take 40 (cycle ["papers-we-love" "papers-we-love-too" "Papers-We-Love-Dallas" "Papers-We-Love-Munich"])))
 
