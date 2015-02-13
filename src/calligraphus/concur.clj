@@ -7,8 +7,6 @@
             [clj-yaml.core :as yaml]
             [throttler.core :refer [throttle-chan chan-throttler]]))
 
-(def api-key "4113124f79194d5f676f152d51377b54")
-
 (def group-uri-template "http://api.meetup.com/2/groups?radius=25.0&order=id&group_urlname=%s&desc=false&offset=0&photo-host=public&format=json&page=50&key=%s")
 (def event-uri-template "https://api.meetup.com/2/events?&sign=true&photo-host=public&status=upcoming,past&group_id=%s&fields=photo_album_id&page=50&key=%s")
 (def photo-uri-template "https://api.meetup.com/2/photos?&sign=true&photo-host=public&photo_album_id=%s&page=20&key=%s")
