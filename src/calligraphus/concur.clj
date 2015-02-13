@@ -1,5 +1,6 @@
 (ns calligraphus.concur
-  (:require [clojure.string :as str]
+  (:require [calligraphus.creds :as creds]
+            [clojure.string :as str]
             [clojure.walk :as walk]
             [clojure.tools.logging :as log]
             [org.httpkit.client :as http]
@@ -11,22 +12,22 @@
 
 (defn make-group-uri
   [group]
-  (format group-uri-template group api-key))
+  (format group-uri-template group creds/api-key))
 
 (defn make-event-uri
   [group]
-  (format event-uri-template (:id group) api-key))
+  (format event-uri-template (:id group) creds/api-key))
 
 (defn make-photo-uri
   [event]
-  (format photo-uri-template (:photo_album_id event) api-key))
+  (format photo-uri-template (:photo_album_id event) creds/api-key))
 
 ;; :body comes back as JSON so we need to convert to a keyworded map
 (defn parse-response
   [resp]
   (assoc resp :body (walk/keywordize-keys (parse-string (:body resp)))))
 
-(def chapter-urls ["papers-we-love" "papers-we-love-too" "Papers-We-Love-Boulder" "papers-we-love-london" "Papers-We-Love-in-saint-louis" "Papers-We-Love-Columbus" "Papers-We-Love-Berlin" "Doo-Things" "Papers-We-Love-Boston" "Papers-we-love-Bangalore/" "Papers-We-Love-DC" "Papers-We-Love-Montreal" "Papers-We-Love-Seattle" "Papers-We-Love-Toronto" "Papers-We-Love-Hamburg" "Papers-We-Love-Dallas" "Papers-We-Love-Chicago" "Papers-We-Love-Reykjavik" "Papers-We-Love-Vienna" "Papers-We-Love-Munich"])
+(def chapter-urls ["papers-we-love" "papers-we-love-too" "Papers-We-Love-Boulder" "papers-we-love-london" "Papers-We-Love-in-saint-louis" "Papers-We-Love-Columbus" "Papers-We-Love-Berlin" "Doo-Things" "Papers-We-Love-Boston" "Papers-we-love-Bangalore/" "Papers-We-Love-DC" "Papers-We-Love-Montreal" "Papers-We-Love-Seattle" "Papers-We-Love-Toronto" "Papers-We-Love-Hamburg" "Papers-We-Love-Dallas" "Papers-We-Love-Chicago" "Papers-We-Love-Reykjavik" "Papers-We-Love-Vienna" "Papers-We-Love-Munich" "Papers-We-Love-Madrid"])
 
 (def groups (atom []))
 (def group-events (atom []))
@@ -62,19 +63,18 @@
 
 (defn get-groups
   [coll]
-  (let [url-set (partition 20 coll)]
+  (let [url-set (partition-all 20 coll)]
     (send-blast url-set make-group-uri parse-groups "Groups")))
 
 (defn get-events
   [coll]
-  (let [url-set (partition 20 coll)]
+  (let [url-set (partition-all 20 coll)]
     (send-blast url-set make-event-uri parse-events "Events")))
 
 (defn get-photos
   [coll]
-  (let [url-set (partition 20 coll)]
+  (let [url-set (partition-all 20 coll)]
     (send-blast url-set make-photo-uri parse-photos "Photos")))
-
 
 (defn index-map
   [coll]
