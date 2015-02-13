@@ -1,2 +1,2 @@
 #pattern  filter=crypt diff=crypt
-src/calligraphus/keys.clj filter=crypt diff=crypt
+src/calligraphus/creds.clj filter=crypt diff=crypt
