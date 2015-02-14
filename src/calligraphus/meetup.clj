@@ -6,12 +6,6 @@
             [org.httpkit.client :as http]
             [cheshire.core :refer :all]))
 
-;; Mutable storage for API responses
-
-(def groups (atom []))
-(def group-events (atom []))
-(def event-photos (atom []))
-
 ;; Endpoint URI templates
 
 (def group-uri-template "http://api.meetup.com/2/groups?radius=25.0&order=id&group_urlname=%s&desc=false&offset=0&photo-host=public&format=json&page=50&key=%s")
@@ -39,37 +33,42 @@
 
 (defn parse-groups
   "Only store 200 OK responses in groups atom"
-  [results]
+  [rbin results]
   (doseq [result results]
     (when (= (:status result) 200)
-      (swap! groups conj (first (get-in result [:body :results]))))))
+      (swap! rbin conj (first (get-in result [:body :results]))))))
 
 (defn parse-events
   "Only store 200 OK responses in group-events atom"
-  [results]
+  [rbin results]
   (doseq [result results]
     (when (= (:status result) 200)
-      (swap! group-events conj (get-in result [:body :results])))))
+      (swap! rbin conj (get-in result [:body :results])))))
 
 (defn parse-photos
   "Only store 200 OK responses in event-photos atom"
-  [results]
+  [rbin results]
   (doseq [result results]
     (when (= (:status result) 200)
-      (swap! event-photos conj (get-in result [:body :results])))))
+      (swap! rbin conj (get-in result [:body :results])))))
 
 (defn send-blast
   "We have to throttle concurrent requests against the API endpoints as per
   headers sent back in responses, otherwise we will get locked out for up to
   an hour."
   [set uri-fn parse-fn type]
-  (doseq [urls set]
-    (let [futures (doall (map #(http/get (uri-fn %)) urls))
-          results (reduce #(conj %1 (parse-response (deref %2))) [] futures)
-          limit (get-in (first results) [:headers :x-ratelimit-reset])]
-      (log/info type (map (fn [r] [(:status r) (str "limit:" limit)]) results))
-      (parse-fn results)
-      (Thread/sleep (+ (* (Integer/parseInt limit) 1000) 300)))))
+  (let [rbin (atom [])]
+    (doseq [urls set]
+      (let [filter-fn (partial parse-fn rbin)
+            futures (doall (map #(http/get (uri-fn %)) urls))
+            results (reduce #(conj %1 (parse-response (deref %2))) [] futures)
+            limit (get-in (first results) [:headers :x-ratelimit-reset])]
+        (log/info type (map
+                        (fn [r] [(:status r) (str "limit:" limit)])
+                        results))
+        (filter-fn results)
+        (Thread/sleep (+ (* (Integer/parseInt limit) 1000) 300))))
+    @rbin))
 
 (defn get-groups
   "Fetch from /groups endpoint"
@@ -118,12 +117,15 @@
 (defn get-chapters
   "Take a vector of chapter url-names and return meetup.com data as a map"
   [chapters]
-  (get-groups chapters)
-  (get-events @groups)
-  (get-photos (remove #(nil? (:photo_album_id %)) (flatten @group-events)))
-  (let [group-map (index-map @groups)
-        event-map (index-map (flatten @group-events))
-        event-photo-map (match-photos event-map @event-photos)
+  ;; Build and wave together maps
+  (let [groups (get-groups chapters)
+        group-events (get-events groups)
+        event-photos (get-photos (remove
+                                  #(nil? (:photo_album_id %))
+                                  (flatten group-events)))
+        group-map (index-map groups)
+        event-map (index-map (flatten group-events))
+        event-photo-map (match-photos event-map event-photos)
         final-map (match-events-to-group group-map event-photo-map)]
     ;; Swap urlname for :id keys
     (dissoc (reduce-kv #(assoc %1 (:urlname %3) %3) {} final-map) "null")))
