@@ -126,4 +126,4 @@
         event-photo-map (match-photos event-map @event-photos)
         final-map (match-events-to-group group-map event-photo-map)]
     ;; Swap urlname for :id keys
-    (reduce-kv #(assoc %1 (:urlname %3) %3) {} final-map)))
+    (dissoc (reduce-kv #(assoc %1 (:urlname %3) %3) {} final-map) "null")))
