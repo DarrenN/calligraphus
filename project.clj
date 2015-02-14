@@ -8,4 +8,5 @@
                  [org.clojure/tools.logging "0.3.1"]
                  [http-kit "2.1.19"]
                  [circleci/clj-yaml "0.5.3"]
-                 [cheshire "5.4.0"]])
+                 [cheshire "5.4.0"]]
+  :main calligraphus.core)
