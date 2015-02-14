@@ -123,5 +123,7 @@
   (get-photos (remove #(nil? (:photo_album_id %)) (flatten @group-events)))
   (let [group-map (index-map @groups)
         event-map (index-map (flatten @group-events))
-        event-photo-map (match-photos event-map @event-photos)]
-    (match-events-to-group group-map event-photo-map)))
+        event-photo-map (match-photos event-map @event-photos)
+        final-map (match-events-to-group group-map event-photo-map)]
+    ;; Swap urlname for :id keys
+    (reduce-kv #(assoc %1 (:urlname %3) %3) {} final-map)))
