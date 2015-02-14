@@ -1,5 +1,5 @@
 (ns calligraphus.core
-  (:require [calligraphus.meetup]
+  (:require [calligraphus.meetup :as meetup]
             [clojure.string :as str]
             [clojure.walk :as walk]
             [clojure.java.io :as io]
