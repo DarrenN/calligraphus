@@ -23,109 +23,80 @@
   (format event-uri-template (:id group) creds/api-key))
 
 (defn make-photo-uri
-  [event]
-  (format photo-uri-template (:photo_album_id event) creds/api-key))
+  [photo-id]
+  (format photo-uri-template photo-id creds/api-key))
 
-(defn parse-response
+(defn keywordize-response
   ":body comes back as JSON so we need to convert to a keyworded map"
   [resp]
   (assoc resp :body (walk/keywordize-keys (parse-string (:body resp)))))
 
-(defn parse-groups
-  "Only store 200 OK responses in groups atom"
-  [rbin results]
-  (doseq [result results]
-    (when (= (:status result) 200)
-      (swap! rbin conj (first (get-in result [:body :results]))))))
+(defn throttle-request
+  "Check the x-ratelimit headers on every response and sleep if we're near
+  the last available request for our time slot. Prevents us getting locked out."
+  [url]
+  (let [future (http/get url)
+        response @future
+        {:keys [x-ratelimit-reset x-ratelimit-limit x-ratelimit-remaining]} (:headers response)]
+    (log/info [(:status response) (str "Remaining:" x-ratelimit-remaining)])
+    ;; If we're withing one request of the limit, hit the brakes
+    (when (= 1 (Integer/parseInt x-ratelimit-remaining))
+      (log/info "Hit limit, throttling for" x-ratelimit-reset)
+      (Thread/sleep (+ 300 (* 1000 (Integer/parseInt x-ratelimit-reset)))))
+    (keywordize-response response)))
 
-(defn parse-events
-  "Only store 200 OK responses in group-events atom"
-  [rbin results]
-  (doseq [result results]
-    (when (= (:status result) 200)
-      (swap! rbin conj (get-in result [:body :results])))))
-
-(defn parse-photos
-  "Only store 200 OK responses in event-photos atom"
-  [rbin results]
-  (doseq [result results]
-    (when (= (:status result) 200)
-      (swap! rbin conj (get-in result [:body :results])))))
-
-(defn send-blast
-  "We have to throttle concurrent requests against the API endpoints as per
-  headers sent back in responses, otherwise we will get locked out for up to
-  an hour."
-  [set uri-fn parse-fn type]
-  (let [rbin (atom [])]
-    (doseq [urls set]
-      (let [filter-fn (partial parse-fn rbin)
-            futures (doall (map #(http/get (uri-fn %)) urls))
-            results (reduce #(conj %1 (parse-response (deref %2))) [] futures)
-            limit (get-in (first results) [:headers :x-ratelimit-reset])]
-        (log/info type (map
-                        (fn [r] [(:status r) (str "limit:" limit)])
-                        results))
-        (filter-fn results)
-        (Thread/sleep (+ (* (Integer/parseInt limit) 1000) 300))))
-    @rbin))
-
-(defn get-groups
-  "Fetch from /groups endpoint"
-  [coll]
-  (let [url-set (partition-all 20 coll)]
-    (send-blast url-set make-group-uri parse-groups "Groups")))
+(defn get-group
+  "Retrieve group data, if not available pass along an empty map"
+  [urlname]
+  (let [resp (throttle-request (make-group-uri urlname))
+        status (:status resp)
+        group (first (get-in resp [:body :results]))]
+    (if-not (= 200 status)
+      {}
+      (hash-map urlname group))))
 
 (defn get-events
-  "Fetch from /events endpoint"
-  [coll]
-  (let [url-set (partition-all 20 coll)]
-    (send-blast url-set make-event-uri parse-events "Events")))
+  "If group has events assoc them onto the map"
+  [group-map]
+  (let [urlname (first (keys group-map))
+        resp (throttle-request (make-event-uri (get group-map urlname)))
+        status (:status resp)
+        events (get-in resp [:body :results])]
+    (if-not (= 200 status)
+      group-map
+      (assoc-in group-map [urlname :events] events))))
+
+(defn get-photo-albums
+  "If the event has a photo_album_id then assoc it on"
+  [event]
+  (let [photo-id (:photo_album_id event)]
+    (if (nil? photo-id)
+      event
+      (let [resp (throttle-request (make-photo-uri photo-id))
+            status (:status resp)
+            photos (get-in resp [:body :results])]
+        (if-not (= 200 status)
+          event
+          (assoc event :photos photos))))))
 
 (defn get-photos
-  "Fetch from /photos endpoint"
-  [coll]
-  (let [url-set (partition-all 20 coll)]
-    (send-blast url-set make-photo-uri parse-photos "Photos")))
+  "Map over the events collection and add photo-albums"
+  [group-map]
+  (let [urlname (first (keys group-map))
+        events (get-in group-map [urlname :events])
+        events-with-photos (map get-photo-albums events)]
+    (assoc-in group-map [urlname :events] events-with-photos)))
 
-(defn index-map
-  "Convert a vector of maps to a map keyed by :id"
-  [coll]
-  (reduce #(assoc %1 (keyword (str (:id %2))) %2) {} coll))
-
-(defn match-photos
-  "Use event id within photo vectors to attach to correct event entry"
-  [event-map photos]
-  (reduce (fn [em photo]
-            (let [event-id (keyword (-> (first photo) :photo_album :event_id))]
-              (assoc-in em [event-id :photos] photo)))
-          event-map
-          photos))
-
-(defn match-events-to-group
-  "Use group id within events to find correct group entry"
-  [group-map event-map]
-  (let [event-keys (keys event-map)]
-    (reduce (fn [gm ek]
-              (let [event (ek event-map)
-                    group-id (keyword (str (get-in event-map [ek :group :id])))
-                    group-events (get-in gm [group-id :events])]
-                (assoc-in gm [group-id :events] (conj group-events event))))
-            group-map
-            event-keys)))
+(defn build-chapter-map
+  "Get a map of chapter information from chapter's urlname"
+  [m urlname]
+  (let [c (-> urlname
+              (get-group)
+              (get-events)
+              (get-photos))]
+    (conj m c)))
 
 (defn get-chapters
-  "Take a vector of chapter url-names and return meetup.com data as a map"
+  "Take a vector of chapter urlnames and build a large map keyed on urlname"
   [chapters]
-  ;; Build and wave together maps
-  (let [groups (get-groups chapters)
-        group-events (get-events groups)
-        event-photos (get-photos (remove
-                                  #(nil? (:photo_album_id %))
-                                  (flatten group-events)))
-        group-map (index-map groups)
-        event-map (index-map (flatten group-events))
-        event-photo-map (match-photos event-map event-photos)
-        final-map (match-events-to-group group-map event-photo-map)]
-    ;; Swap urlname for :id keys
-    (dissoc (reduce-kv #(assoc %1 (:urlname %3) %3) {} final-map) "null")))
+  (reduce #(build-chapter-map %1 %2) {} chapters))
