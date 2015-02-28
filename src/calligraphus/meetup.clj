@@ -99,4 +99,4 @@
 (defn get-chapters
   "Take a vector of chapter urlnames and build a large map keyed on urlname"
   [chapters]
-  (reduce #(build-chapter-map %1 %2) {} chapters))
+  (reduce #(build-chapter-map %1 %2) {} (map :url chapters)))
