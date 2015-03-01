@@ -10,8 +10,24 @@
             [cheshire.core :refer :all]
             [cemerick.url :refer (url url-encode)]))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; private
+
+;; api-dispatch determines which API endpoint namespace to use in gathering
+;; chapter data
+(defmulti api-dispatch (fn [chapters]
+                (:api (first chapters))))
+
+(defmethod api-dispatch "meetup"
+  [chapters]
+  (meetup/get-chapters chapters))
+
+(defmethod api-dispatch "facebook"
+  [chapters]
+  (facebook/get-chapters chapters))
+
 (defn match-api
-  "Match url host against string to determine which API namespace to call"
+  "Tag url with an API namespace, determined by inspecting the url"
   [u]
   (let [host (:host (url u))]
     (cond
@@ -30,11 +46,10 @@
   "Inspect collection for API namespace information. If that namespace exists
   we pass the collection to its get-chapters function or pass the map back."
   [m chapters]
-  (let [api (:api (first chapters))]
-    (if (find-ns (symbol (str "calligraphus." api)))
-      (let [f (ns-resolve (symbol (str "calligraphus." api)) 'get-chapters)]
-        (conj m (f chapters)))
-      m)))
+  (conj m (api-dispatch chapters)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; public
 
 (defn transcribe
   "Take a yaml file and harvest various API data, saving a new yaml file"
@@ -47,3 +62,4 @@
     (spit file-out (yaml/generate-string chapter-map))))
 
 ;; (transcribe "chapters.yml" "foo.yml")
+;; (def c (transcribe "/Users/shibuya/github/papers-we-love.github.io/source/chapters.yml" "foo"))
