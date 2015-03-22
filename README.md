@@ -12,6 +12,12 @@ Calligraphus takes a Papers We Love chapter yaml file and outputs chapter API da
 $ java -jar calligraphus-0.1.0-standalone.jar -i "/path/to/chapters.yml" -o "path/to/output.yml"
 ```
 
+You will need to have an API key for Meetup.com in your `ENV` like so:
+
+```shell
+export MEETUP_API_KEY="foo"
+```
+
 ## License
 
 Copyright © 2015 Darren Newton
