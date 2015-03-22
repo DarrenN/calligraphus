@@ -1,10 +1,12 @@
 (ns calligraphus.meetup
-  (:require [calligraphus.creds :as creds]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.walk :as walk]
             [clojure.tools.logging :as log]
             [org.httpkit.client :as http]
-            [cheshire.core :refer :all]))
+            [cheshire.core :refer :all]
+            [environ.core :refer [env]]))
+
+(def meetup-api-key (env :meetup-api-key))
 
 ;; Endpoint URI templates
 
@@ -16,15 +18,15 @@
 
 (defn make-group-uri
   [url]
-  (format group-uri-template url creds/api-key))
+  (format group-uri-template url meetup-api-key))
 
 (defn make-event-uri
   [group]
-  (format event-uri-template (:id group) creds/api-key))
+  (format event-uri-template (:id group) meetup-api-key))
 
 (defn make-photo-uri
   [photo-id]
-  (format photo-uri-template photo-id creds/api-key))
+  (format photo-uri-template photo-id meetup-api-key))
 
 (defn keywordize-response
   ":body comes back as JSON so we need to convert to a keyworded map"
@@ -38,7 +40,7 @@
   (let [future (http/get url)
         response @future
         {:keys [x-ratelimit-reset x-ratelimit-limit x-ratelimit-remaining]} (:headers response)]
-    (log/info [(:status response) (str "Remaining:" x-ratelimit-remaining)])
+    (log/debug [(:status response) (str "Remaining:" x-ratelimit-remaining)])
     ;; If we're withing one request of the limit, hit the brakes
     (when (= 1 (Integer/parseInt x-ratelimit-remaining))
       (log/info "Hit limit, throttling for" x-ratelimit-reset)
@@ -52,7 +54,8 @@
         status (:status resp)
         group (first (get-in resp [:body :results]))]
     (if-not (= 200 status)
-      {}
+      (do (log/warn "Group endpoint returned" status "for" urlname)
+          {})
       (hash-map urlname group))))
 
 (defn get-events
@@ -63,7 +66,8 @@
         status (:status resp)
         events (get-in resp [:body :results])]
     (if-not (= 200 status)
-      group-map
+      (do (log/warn "Event endpoint returned" status "for" urlname)
+          group-map)
       (assoc-in group-map [urlname :events] events))))
 
 (defn get-photo-albums
@@ -76,7 +80,8 @@
             status (:status resp)
             photos (get-in resp [:body :results])]
         (if-not (= 200 status)
-          event
+          (do (log/warn "Photos endpoint returned" status "for" photo-id)
+              event)
           (assoc event :photos photos))))))
 
 (defn get-photos

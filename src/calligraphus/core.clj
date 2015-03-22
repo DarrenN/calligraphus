@@ -1,4 +1,5 @@
 (ns calligraphus.core
+  (:gen-class)
   (:require [calligraphus.meetup :as meetup]
             [calligraphus.facebook :as facebook]
             [clojure.string :as str]
@@ -6,6 +7,7 @@
             [clojure.java.io :as io]
             [clojure.pprint :as pretty]
             [clojure.tools.logging :as log]
+            [clojure.tools.cli :refer [parse-opts]]
             [clj-yaml.core :as yaml]
             [cheshire.core :refer :all]
             [cemerick.url :refer (url url-encode)]))
@@ -48,6 +50,33 @@
   [m chapters]
   (conj m (api-dispatch chapters)))
 
+;;
+;; CLI support
+;;
+
+(def cli-options
+  [["-i" "--in PATH" "Path to input yaml"]
+   ["-o" "--out PATH" "Path to output yaml"]
+   ["-h" "--help"]])
+
+(defn usage [options-summary]
+  "Pretty print the CLI options"
+  (->> ["Calligraphus"
+        "------------"
+        ""
+        "Options:"
+        options-summary
+        ""]
+       (str/join \newline)))
+
+(defn error-msg [errors]
+  (str "The following errors occured while attempting to transcribe:\n\n"
+       (str/join \newline errors)))
+
+(defn exit [status msg]
+  (println msg)
+  (System/exit status))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; public
 
@@ -61,5 +90,12 @@
         chapter-map (reduce build-map {} sorted)]
     (spit file-out (yaml/generate-string chapter-map))))
 
-;; (transcribe "chapters.yml" "foo.yml")
-;; (def c (transcribe "/Users/shibuya/github/papers-we-love.github.io/source/chapters.yml" "foo"))
+(defn -main
+  "CLI interface from uberjar"
+  [& args]
+  (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)]
+    (cond
+      (:help options) (exit 0 (usage summary))
+      (not= (count options) 2) (exit 2 (usage summary))
+      errors (exit 1 (error-msg errors)))
+    (transcribe (:in options) (:out options))))
