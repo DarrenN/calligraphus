@@ -6,7 +6,11 @@ Gather, collate and transcribe Papers We Love chapter data from Meetup.com into 
 
 ## Usage
 
-FIXME
+Calligraphus takes a Papers We Love chapter yaml file and outputs chapter API data as yaml:
+
+```shell
+$ java -jar calligraphus-0.1.0-standalone.jar -i "/path/to/chapters.yml" -o "path/to/output.yml"
+```
 
 ## License
 
