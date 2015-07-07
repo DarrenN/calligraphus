@@ -1,4 +1,4 @@
-(defproject calligraphus "0.1.0"
+(defproject calligraphus "0.1.1"
   :description "Meetup.com API aggregator for Papers We Love"
   :url "http://paperswelove.org"
   :license {:name "Eclipse Public License"

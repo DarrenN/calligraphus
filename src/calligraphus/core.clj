@@ -88,7 +88,9 @@
         urls (remove nil? (map :meetup_url chapters))
         sorted (partition-by :api (sort-by :api (map process-url urls)))
         chapter-map (reduce build-map {} sorted)]
-    (spit file-out (yaml/generate-string chapter-map))))
+    (if (false? chapter-map)
+      (exit 1 (error-msg ["Throttled by Meetup.com!"]))
+      (spit file-out (yaml/generate-string chapter-map)))))
 
 (defn -main
   "CLI interface from uberjar"

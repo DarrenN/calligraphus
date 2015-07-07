@@ -14,6 +14,9 @@
 (def event-uri-template "https://api.meetup.com/2/events?&sign=true&photo-host=public&status=upcoming,past&group_id=%s&fields=photo_album_id&page=50&key=%s")
 (def photo-uri-template "https://api.meetup.com/2/photos?&sign=true&photo-host=public&photo_album_id=%s&page=20&key=%s")
 
+;; We use this to prevent a save of bad data
+(def status (atom true))
+
 ;; Build correct URIs for endpoints from templates
 
 (defn make-group-uri
@@ -41,8 +44,12 @@
         response @future
         {:keys [x-ratelimit-reset x-ratelimit-limit x-ratelimit-remaining]} (:headers response)]
     (log/debug [(:status response) (str "Remaining:" x-ratelimit-remaining)])
-    ;; If we're withing one request of the limit, hit the brakes
-    (when (= 1 (Integer/parseInt x-ratelimit-remaining))
+    ;; if we get timed out we need to prevent a save
+    (when (= 429 (:status response))
+      (swap! status (fn [n] false)))
+
+    ;; If we're within one request of the limit, hit the brakes
+    (when (= 2 (Integer/parseInt x-ratelimit-remaining))
       (log/info "Hit limit, throttling for" x-ratelimit-reset)
       (Thread/sleep (+ 300 (* 1000 (Integer/parseInt x-ratelimit-reset)))))
     (keywordize-response response)))
@@ -99,7 +106,9 @@
               (get-group)
               (get-events)
               (get-photos))]
-    (conj m c)))
+    (if (true? @status)
+      (conj m c)
+      false)))
 
 (defn get-chapters
   "Take a vector of chapter urlnames and build a large map keyed on urlname"
