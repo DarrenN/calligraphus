@@ -43,7 +43,7 @@
   (let [future (http/get url)
         response @future
         {:keys [x-ratelimit-reset x-ratelimit-limit x-ratelimit-remaining]} (:headers response)]
-    (log/debug [(:status response) (str "Remaining:" x-ratelimit-remaining)])
+    (log/info [(:status response) (str "Remaining:" x-ratelimit-remaining)])
     ;; if we get timed out we need to prevent a save
     (when (= 429 (:status response))
       (swap! status (fn [n] false)))
@@ -80,7 +80,7 @@
 (defn get-photo-albums
   "If the event has a photo_album_id then assoc it on"
   [event]
-  (let [photo-id (:photo_album_id event)]
+  (let [photo-id (:photoAlbumId (:photo_album_id event))]
     (if (nil? photo-id)
       event
       (let [resp (throttle-request (make-photo-uri photo-id))
