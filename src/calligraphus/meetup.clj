@@ -43,7 +43,7 @@
   (let [future (http/get url)
         response @future
         {:keys [x-ratelimit-reset x-ratelimit-limit x-ratelimit-remaining]} (:headers response)]
-    (log/info [(:status response) (str "Remaining:" x-ratelimit-remaining)])
+    (log/debug [(:status response) (str "Remaining:" x-ratelimit-remaining)])
     ;; if we get timed out we need to prevent a save
     (when (= 429 (:status response))
       (swap! status (fn [n] false)))
