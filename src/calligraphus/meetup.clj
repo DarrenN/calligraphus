@@ -80,7 +80,7 @@
 (defn get-photo-albums
   "If the event has a photo_album_id then assoc it on"
   [event]
-  (let [photo-id (:photo_album_id event)]
+  (let [photo-id (:photoAlbumId (:photo_album_id event))]
     (if (nil? photo-id)
       event
       (let [resp (throttle-request (make-photo-uri photo-id))
